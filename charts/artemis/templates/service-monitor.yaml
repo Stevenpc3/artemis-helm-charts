@@ -1,0 +1,38 @@
+{{ if .Values.metrics.serviceMonitor.enabled -}}
+#
+# Artemis ServiceMonitor that tells Prometheus to scrape the metrics endpoint
+# This should be limited to only this artemis instance as a deployment could have
+# many instance of artemis.
+# Uses Prometheus ServiceMonitor Spec
+# https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/api.md#servicemonitorspec
+#
+{{- $name := include "company/common/names/name" . }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  labels: {{ include "company/common/labels/metadata" . | nindent 4 }}
+    app: artemis-monitoring-node-exporter
+  name: {{ printf "artemis-monitoring-node-exporter-%s-%s-%s" .Release.Name $name .Release.Namespace }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  endpoints:
+  # Interval in seconds
+  - interval: {{ .Values.metrics.serviceMonitor.interval }}s
+    port: metrics
+  jobLabel: artemis-service-monitor
+  {{- if .Values.metrics.serviceMonitor.fallbackScrapeProtocol }}
+  # TODO: remove when metrics jar is updated to 3.x in docker image
+  fallbackScrapeProtocol: {{ .Values.metrics.serviceMonitor.fallbackScrapeProtocol }}
+  {{- end }}
+  namespaceSelector:
+    matchNames:
+    - {{ .Release.Namespace }}
+  selector:
+    matchExpressions:
+    - key: ha-instance
+      operator: In
+      values:
+      - live
+      - backup
+    matchLabels: {{ include "company/common/labels/selector" . | nindent 6 }}
+{{- end }}

@@ -1,0 +1,13 @@
+{{- if not .Values.configMaps.logging }}
+#
+# artemis logging config
+#
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ include "company/common/names/fullname" $ }}-log
+  labels: {{ include "company/common/labels/metadata" $ | nindent 4 }}
+data:
+  logging.properties: |-
+{{ tpl (.Files.Get "config/logging.properties") $ | indent 4  }}
+{{- end }}

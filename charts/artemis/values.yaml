@@ -1,0 +1,454 @@
+replicas: 1
+
+# -- readinessProbe verifies that Artemis can serve messages on addresses so it checks the acceptor ports.
+# We currently only check the main acceptor port on 61616.  If other ports are needed then update to use
+# https://github.com/artemiscloud/activemq-artemis-broker-kubernetes-image/blob/main/modules/activemq-artemis-launch/added/readinessProbe.sh.
+# Backup instances do not accept connections so they will always be unready and needs to be off in HA mode otherwise
+# kubernetes will not create endpoints and artemis will not come up.
+readinessProbe:
+  enabled: true
+  spec:
+    initialDelaySeconds: 5
+    # Going unready should stop messages from coming in.
+    periodSeconds: 5
+    timeoutSeconds: 5
+    failureThreshold: 1
+    tcpSocket:
+      port: 61616
+
+# -- livenessProbe will check the management console that is always up in live or backup mode.
+livenessProbe:
+  enabled: true
+  spec:
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    timeoutSeconds: 5
+    failureThreshold: 1
+    tcpSocket:
+      port: 8161
+
+# -- Wait for management console to be up before considering started for live and backup.
+# requires kubernetes api 1.18+
+startupProbe:
+  enabled: true
+  spec:
+    periodSeconds: 5
+    failureThreshold: 24
+    tcpSocket:
+      port: 8161
+
+resources:
+  limits:
+    memory: 3G
+  requests:
+    cpu: 100m
+
+jvm:
+  # -- jvm heap size. Passed as a jvm options `-Xmx` and `-Xms`
+  memory: 1500m
+  # -- additional jvm args appended to the artemis startup command
+  args: -Dlog4j2.configurationFile=file:/config/logging.properties
+
+image:
+  repository: repo/helm-charts/artemis
+  tag: 2.42.0-0
+  pullPolicy: IfNotPresent
+
+live:
+  persistence:
+    enabled: true
+    dynamic: true
+    size: 1G
+    name: storage
+    mountPath: /opt/company-artemis/data
+    subPathSuffix: artemis
+    accessModes:
+      - ReadWriteOnce
+    static:
+      name: artemis
+
+backup:
+  persistence:
+    enabled: true
+    dynamic: true
+    size: 1G
+    name: storage
+    mountPath: /opt/company-artemis/data
+    subPathSuffix: artemis
+    accessModes:
+      - ReadWriteOnce
+    static:
+      name: artemis
+
+# -- security context at the pod level
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 992
+  runAsGroup: 992
+  fsGroup: 992
+
+# -- Artemis container security context
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: "RuntimeDefault"
+
+# -- You can create and deploy a Configmap that contains a broker.xml similar to the /config/broker-live.xml and have Artemis use that broker.
+configMaps:
+  live:
+    # -- the name of a ConfigMap containing the artemis live instance broker.xml file to use instead of the built-in one
+    broker: ""
+  backup:
+    # -- the name of a ConfigMap containing the artemis backup instance broker.xml file to use instead of the built-in one
+    broker: ""
+  # -- the name of a ConfigMap containing the artemis logging.properties file to use instead of the built-in one
+  logging: ""
+  # -- the name of a ConfigMap containing the artemis login.config file to use instead of the built-in one
+  login: ""
+  # -- the name of a ConfigMap containing the artemis roles.properties file to use instead of the built-in one
+  roles: ""
+
+# port on which to expose the admin web app
+#adminNodePort:
+
+# port on which to expose the broker
+#amqpNodePort:
+
+# Name of the PriorityClass to set
+#priorityClassName: highest-priority
+
+# -- Put artemis in HA mode and deploy multiple Artemis instances in replication mode.
+ha:
+  enabled: false
+  primary:
+    checkForActiveServer: true
+  backup:
+    allowFailBack: false
+    maxSavedReplicatedJournalsSize: 0
+
+metrics:
+  # -- Metrics for all addresses and queues are enabled by default. If you want to disable metrics for a particular address or set of addresses you can do so by setting the enable-metrics address-setting to false. Optional metrics described at https://activemq.apache.org/components/artemis/documentation/latest/metrics.html#optional-metrics
+  enabled: false
+  # -- Will send metrics to Prometheus instance.
+  serviceMonitor:
+    # -- Enable the [serviceMonitor](templates/service-monitor.yaml)
+    enabled: false
+    # -- Interval in seconds for the monitor service to scrape for metrics
+    interval: 10
+    # Fallback protocol to use if a scrape returns blank, unparseable, or otherwise invalid Content-Type.
+    # Supported values (case sensitive): PrometheusProto, OpenMetricsText0.0.1,
+    # OpenMetricsText1.0.0, PrometheusText0.0.4, PrometheusText1.0.0.
+    fallbackScrapeProtocol: PrometheusText0.0.4
+  nettyPool:
+    # -- Collects metrics from Netty’s PooledByteBufAllocatorMetric.
+    enabled: false
+  fileDescriptors:
+    # -- Gauges current and max-allowed open files.
+    enabled: false
+  processor:
+    # -- Gauges system CPU count, CPU usage, and 1-minute load average as well as process CPU usage.
+    enabled: false
+  uptime:
+    # -- Gauges process start time and uptime.
+    enabled: false
+  logging:
+    # -- Counts the number of logging events per logging category (e.g. WARN, ERROR, etc.).  Works exclusively with Log4j2
+    enabled: false
+  securityCaches:
+    # -- The following authentication & authorization cache metrics are exported. They are all tagged by cache (either authentication or authorization). Additional tags are noted cache.size, cache.puts, cache.gets tagged by result - either hit or miss, cache.evictions, cache.eviction.weight
+    enabled: false
+  jvm:
+    gc:
+      # -- JVM garbage collection data will be available to query
+      enabled: false
+    memory:
+      # -- JVM memory data will be available to query
+      enabled: false
+    threads:
+      # -- JVM thread data will be available to query
+      enabled: false
+
+settings:
+  # -- The amount in bytes before all addresses are considered full. Defaults to half JVM size. https://activemq.apache.org/components/artemis/documentation/latest/paging.html#global-max-messages
+  globalMaxSize: -1
+  # -- The max percentage of data we should use from disks. The System will block while the disk is full.  https://activemq.apache.org/components/artemis/documentation/latest/paging.html#max-disk-usage
+  maxDiskUsage: 95
+  # -- how many journal files to pre-create. https://activemq.apache.org/components/artemis/documentation/latest/persistence.html#configuring-the-message-journal
+  journalMinFiles: 2
+  # -- The upper threshold of the journal file pool, -1 means no Limit. The system will create as many files as needed however when reclaiming files it will shrink back to the journal-pool-files. https://activemq.apache.org/components/artemis/documentation/latest/persistence.html#configuring-the-message-journal
+  journalPoolFiles: 50
+  # -- The Flush timeout for the journal buffer. https://activemq.apache.org/components/artemis/documentation/latest/persistence.html#configuring-the-message-journal
+  journalBufferTimeout: 1500000
+  # -- The size of the internal buffer on the journal in KB. https://activemq.apache.org/components/artemis/documentation/latest/persistence.html#configuring-the-message-journal
+  journalBufferSize: 1485760
+  # -- The interval where the disk is scanned for percentage usage in ms. https://activemq.apache.org/components/artemis/documentation/latest/paging.html#monitoring-disk
+  diskScanPeriod: 5000
+  # -- enable or disable the critical analysis. https://activemq.apache.org/components/artemis/documentation/latest/critical-analysis.html#critical-analysis-of-the-broker
+  criticalAnalyzer: true
+  # -- timeout used to do the critical analysis. https://activemq.apache.org/components/artemis/documentation/latest/critical-analysis.html#critical-analysis-of-the-broker
+  criticalAnalyzerTimeout: 120000
+  # -- time used to check the response times. 0.5 * critical-analyzer-timeout. https://activemq.apache.org/components/artemis/documentation/latest/critical-analysis.html#critical-analysis-of-the-broker
+  criticalAnalyzerCheckPeriod: 60000
+  # -- should the server log, be halted or shutdown upon failures. https://activemq.apache.org/components/artemis/documentation/latest/critical-analysis.html#critical-analysis-of-the-broker
+  criticalAnalyzerPolicy: "HALT"
+  # -- true means that security is enabled. https://activemq.apache.org/components/artemis/documentation/latest/security.html#authentication-authorization
+  securityEnabled: true
+  # -- whether or not to add the name of the validated user to the messages that user sends. https://activemq.apache.org/components/artemis/documentation/latest/security.html#tracking-the-validated-user
+  populateValidatedUser: true
+  # -- https://activemq.apache.org/components/artemis/documentation/latest/security.html#tracking-the-validated-user
+  authenticationCacheSize: 1000
+  # -- https://activemq.apache.org/components/artemis/documentation/latest/security.html#tracking-the-validated-user
+  authorizationCacheSize: 1000
+  # -- how long (in ms) to wait before invalidating the security cache. https://activemq.apache.org/components/artemis/documentation/latest/security.html#authentication-authorization
+  securityInvalidationInterval: 10000
+  # -- if set, this will override how long (in ms) to keep a connection alive without receiving a ping. -1 disables this setting. https://activemq.apache.org/components/artemis/documentation/latest/connection-ttl.html#detecting-dead-connections
+  connectionTTLOverride: 30000
+  # -- how often (in ms) to check connections for ttl violation. https://activemq.apache.org/components/artemis/documentation/latest/connection-ttl.html#detecting-dead-connections
+  connectionTTLCheckInterval: 1000
+
+addressSettings:
+  # -- Days to keep counter details
+  messageCounterHistoryDayLimit: 10
+  # -- Expiry Queue. https://activemq.apache.org/components/artemis/documentation/latest/message-expiry.html#message-expiry
+  expiryAddress:
+    name: "ExpiryQueue"
+    # -- Max size of a specific address in Bytes.
+    maxSizeBytes: 50000000
+    addressFullPolicy: "DROP"
+    purgeOnNoConsumers: true
+  # -- Dead Letter Queue. https://activemq.apache.org/components/artemis/documentation/latest/undelivered-messages.html#dead-letter-addresses
+  deadLetterQueue:
+    name: "deadLetterQueue"
+    # -- Max size of a specific address in Bytes.
+    maxSizeBytes: 50000000
+    expiryDelay: -1
+    addressFullPolicy: "DROP"
+    purgeOnNoConsumers: true
+  # -- Paging limitations for the "#" address. https://activemq.apache.org/components/artemis/documentation/latest/paging.html#page-limits-and-page-full-policy
+  pageLimits:
+    enabled: false
+    pageLimitBytes: "1G"
+    pageFullPolicy: "FAIL"
+
+# -- https://activemq.apache.org/components/artemis/documentation/latest/resource-limits.html#resource-limits
+resourceLimitSettings:
+  match: '"#"'
+  # -- how many connections are allowed by the matched user
+  maxConnections: 500
+  # -- how many queues can be created by the matched user
+  maxQueues: 300
+
+# -- Extra resource-limit-settings to add. # -- https://activemq.apache.org/components/artemis/documentation/latest/configuration-index.html#resource-limit-type
+extraResourceLimitSettings:
+
+# -- Extra addresses to create in artemis. https://activemq.apache.org/components/artemis/documentation/latest/index.html#addressing
+extraAddresses:
+
+# -- Extra address-settings to set in artemis.  Will be appended to the current settings. https://activemq.apache.org/components/artemis/documentation/latest/address-settings.html#address-settings
+extraAddressSettings:
+        #           |
+        #   <address-setting match="deadLetterQueue">
+        #     <max-size-bytes>{{ .Values.settings.maxSizeBytes | int64 }}</max-size-bytes>
+        #     <address-full-policy>DROP</address-full-policy>
+        #     <expiry-delay>{{ .Values.settings.expiryDelay | default -1 | int64 }}</expiry-delay>
+        #     <expiry-address>{{ .Values.settings.expiryAddress}}</expiry-address>
+        #  </address-setting>
+        #  <address-setting match="#">
+        #     <expiry-address>ExpiryQueue</expiry-address>
+        #     <dead-letter-address>deadLetterQueue</dead-letter-address>
+        #     <max-delivery-attempts>3</max-delivery-attempts>
+        #     <message-counter-history-day-limit>{{ .Values.settings.messageCounterHistoryDayLimit }}</message-counter-history-day-limit>
+        #  </address-setting>
+
+acceptors:
+  artemis:
+    # -- Enable TLS
+    tls:
+      enabled: false
+      # -- TLS requires a secret containing a keystore
+      secret:
+        # -- Name of secret with keystore and optionally its password
+        name: ""
+        key:
+          # -- Key required to retrieve the private key used to generate keystore in initContainer
+          private: ""
+          # -- Key required to retrieve the public key used to generate keystore in initContainer
+          public: ""
+          # -- Key required to retrieve the keystore's password from secret
+          password: ""
+      # -- Optional comma separated list of cipher suites used for TLS communication. Ex: "TLS_AES_256_GCM_SHA384"
+      enabledCipherSuites: ""
+      # -- Optional comma separated list of protocols used for TLS communication. Ex: "TLSv1.3"
+      enabledProtocols: ""
+
+    # -- The anycastPrefix for the artemis acceptor. See https://activemq.apache.org/components/artemis/documentation/latest/address-model.html#using-prefixes-to-determine-routing-type
+    anycastPrefix: "anycast://"
+    # -- The multicastPrefix for the artemis acceptor. See https://activemq.apache.org/components/artemis/documentation/latest/address-model.html#using-prefixes-to-determine-routing-type
+    multicastPrefix: "multicast://"
+  stomp:
+    # -- The anycastPrefix for the stomp acceptor. see https://activemq.apache.org/components/artemis/documentation/latest/stomp.html#configuring-routing-semantics-from-the-broker-side
+    anycastPrefix: "/queue/"
+    # -- The multicastPrefix for the stomp acceptor. see https://activemq.apache.org/components/artemis/documentation/latest/stomp.html#configuring-routing-semantics-from-the-broker-side
+    multicastPrefix: "/topic/"
+
+logging:
+  audit:
+    # -- sets the level for which audit logs will be produced. May be configured with one of TRACE, DEBUG, INFO, WARN, ERROR, ALL or OFF.
+    # Set to INFO for STIG recommended audit logging
+    level: "OFF"
+  # -- STIG recommended audit logging defaults
+  events:
+    # -- Includes all the events.
+    all: false
+    # -- Connection is created/destroy.
+    connection: true
+    # -- Session is created/closed.
+    session: true
+    # -- Consumer is created/closed
+    consumer: false
+    # -- Message is delivered to a consumer and when a message is acknowledged by a consumer.
+    delivering: false
+    # -- When a message has been sent to an address and when a message has been routed within the broker.
+    sending: false
+    # -- When a queue created/destroyed, when a message is expired, when a bridge is deployed and when a critical failure occurs.
+    internal: false
+
+# when running with ha enabled, run 3 zookeepers (a quorum) with a minimal storage footprint (artemis will store only 1 key)
+zookeeper-bitnami:
+  enabled: false
+  zookeeper:
+    resourcesPreset: none
+    volumePermissions:
+      resourcesPreset: none
+    tls:
+      resourcesPreset: none
+    nameOverride: artemis-zookeeper
+    replicaCount: 3
+    persistence:
+      size: 200M
+
+oAuthSidecar:
+  enabled: false
+  # -- Use redis as session store instead of cookies (see [Troubleshooting](#Troubleshooting) section)
+  redisSessions: false
+
+  livenessProbe:
+    enabled: true
+    failureThreshold: 2
+    httpGet:
+      path: /ping
+      port: 4180
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  readinessProbe:
+    enabled: true
+    failureThreshold: 1
+    httpGet:
+      path: /ready
+      port: 4180
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  startupProbe:
+    enabled: false
+    failureThreshold: 1
+    httpGet:
+      path: /ping
+      port: 4180
+      scheme: HTTP
+    initialDelaySeconds: 5
+    periodSeconds: 30
+    successThreshold: 1
+    timeoutSeconds: 5
+
+  # -- oAuthSidecar container security context
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+    seccompProfile:
+      type: "RuntimeDefault"
+
+  resources:
+    limits:
+      memory: "512M"
+    requests:
+      cpu: "500m"
+      memory: "512M"
+  oauthSecretName: keycloak-client-secrets
+  config: false
+  containerPort: 4180
+  args:
+    - --config
+    - /etc/oauth2-proxy/oauth2.conf
+    - show-debug-on-error=true
+  extraConfigmapMounts:
+    - name: '{{ include "company/artemis/oauthConfName" . }}'
+      mountPath: '/etc/oauth2-proxy'
+  # -- Keycloak values for oAuth integration/deployment
+  keycloak:
+    # -- Realm for keycloak, required Value if using oAuthSidecar
+    realm: ""
+    # -- ClientID for keycloak, required Value if using oAuthSidecar
+    clientID: ""
+    # -- ClientSecret for Keycloak, required Value if using oAuthSidecar
+    clientSecret: ""
+    # -- CookieSecure - boolean value that is required for the cookie secret
+    cookieSecure: true
+    # -- CookieSecret - required if cookieSecure is true
+    cookieSecret: "SECRETSECRETSECR"
+    # -- Location of URL for keycloak instance, required value if using oAuthSidecar
+    url: ""
+    # -- emailDomain for Keycloak, required value
+    emailDomain: "*"
+    oauth2proxy:
+      # -- Oauth2Proxy image registry
+      registry: "cdn.harbor.company.com"
+      # -- Oauth2Proxy image repository
+      repository: ext.quay.io/oauth2-proxy/oauth2-proxy
+      # -- Oauth2Proxy image tag
+      tag: "v7.8.2"
+      # -- Oauth2Proxy image pull policy
+      pullPolicy: IfNotPresent
+
+ingress:
+  enabled: true
+  annotations:
+      nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+      nginx.ingress.kubernetes.io/proxy-body-size: "200m"
+  rules:
+    - paths:
+      - path: '{{ .Values.basePath }}'
+        servicePort: 8161
+        serviceName: '{{ include "company/common/names/fullname" . }}'
+
+basePath: /
+
+auth:
+  requireLogin: true
+  username: user
+  password: password
+  existingSecret: ""
+  roles:
+    createNonDurableQueue: "amq"
+    deleteNonDurableQueue: "amq"
+    createDurableQueue: "amq"
+    deleteDurableQueue: "amq"
+    createAddress: "amq"
+    deleteAddress: "amq"
+    consume: "amq"
+    browse: "amq"
+    send: "amq"
+    manage: "amq"

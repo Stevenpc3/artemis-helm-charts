@@ -1,0 +1,11 @@
+apiVersion: v2
+appVersion: "1.0"
+description: Provides the default secrets used to secure an Artemis server
+name: artemis-secrets
+version: 0.1.0
+annotations:
+  domain: Undefined
+dependencies:
+  - name: common
+    version: 3.0.1
+    repository: "@repo"

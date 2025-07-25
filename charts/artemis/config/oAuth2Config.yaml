@@ -1,0 +1,58 @@
+{{- $redisURL := (include "company/common/serviceDiscovery/url/redis" .) -}}
+{{- $oauthSidecar := default (dict) .Values.oAuthSidecar -}}
+{{- $oauthSecretName := default "" (include "company/common/util/tpl" (dict "root" . "value"  $oauthSidecar.oauthSecretName) )  -}}
+{{- $secret_url := "" }}
+{{- $secret_clientId :=  ""}}
+{{- $secret_clientSecret := "" }}
+{{- if $oauthSecretName -}}
+  {{ $secret :=  (lookup "v1" "Secret" .Release.Namespace $oauthSecretName).data }}
+    {{- if $secret }}
+      {{- $secret_url =  $secret.baseUrl  | b64dec }}
+      {{- $secret_clientId =  $secret.clientId  | b64dec }}
+      {{- $secret_clientSecret =  $secret.clientSecret | b64dec }}
+    {{- end -}}
+{{- end -}}
+
+{{- $url := .Values.oAuthSidecar.keycloak.url -}}
+{{- $realm := .Values.oAuthSidecar.keycloak.realm -}}
+{{- $endpoint := "" -}}
+{{- if and $url $realm -}}
+  {{- $endpoint = ( printf "https://%s/realms/%s" $url $realm ) -}}
+{{- end -}}
+
+{{- $clientId := .Values.oAuthSidecar.keycloak.clientID -}}
+{{- $clientSecret := .Values.oAuthSidecar.keycloak.clientSecret -}}
+{{- $emailDomain := .Values.oAuthSidecar.keycloak.emailDomain -}}
+{{- $redirectUrl := .Values.oAuthSidecar.keycloak.redirectUrl }}
+
+{{- $keyCloak_url := (default $secret_url $endpoint) -}}
+{{- $keyCloak_clientId := (default $secret_clientId $clientId) -}}
+{{- $keyCloak_clientSecret := (default $secret_clientSecret $clientSecret) -}}
+
+provider = "oidc"
+http_address = "0.0.0.0:4180"
+oidc_issuer_url = "{{ $keyCloak_url }}"
+client_id = "{{ $keyCloak_clientId }}"
+client_secret = "{{ $keyCloak_clientSecret }}"
+cookie_secret = "{{ .Values.oAuthSidecar.keycloak.cookieSecret }}"
+cookie_secure = {{ .Values.oAuthSidecar.keycloak.cookieSecure }}
+login_url = "{{ printf "%s/protocol/openid-connect/auth" $keyCloak_url }}"
+redeem_url = "{{ printf "%s/protocol/openid-connect/token" $keyCloak_url }}"
+validate_url = "{{ printf "%s/protocol/openid-connect/userinfo" $keyCloak_url  }}"
+{{- if $redirectUrl}}
+redirect_url = "{{ $redirectUrl }}"
+{{- end }}
+{{- if $emailDomain }}
+email_domains = [{{ $emailDomain | quote }}]
+{{- end }}
+ssl_upstream_insecure_skip_verify = true
+ssl_insecure_skip_verify = true
+upstreams = ["http://localhost:8161"]
+skip_provider_button = true
+insecure_oidc_allow_unverified_email = true
+proxy_prefix = "{{ .Values.basePath | trimSuffix "/" }}/oauth2"
+cookie_path = "{{ .Values.basePath }}"
+{{- if $oauthSidecar.redisSessions }}
+session_store_type = "redis"
+redis_connection_url = "{{ $redisURL }}"
+{{- end }}

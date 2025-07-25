@@ -1,0 +1,181 @@
+#
+# Artemis backup deployment
+#
+{{ if .Values.ha.enabled }}
+{{- $fullName := include "company/common/names/fullname" . }}
+kind: StatefulSet
+apiVersion: apps/v1
+metadata:
+  name: {{ $fullName }}-2
+  labels: {{ include "company/common/labels/metadata" . | nindent 4 }}
+spec:
+  serviceName: {{ $fullName }}-2
+  selector:
+    matchLabels: {{- include "company/common/labels/selector" . | nindent 6 }}
+      ha-instance: backup
+  replicas: {{ .Values.replicas }}
+  template:
+    metadata:
+      labels: {{ include "company/common/labels/metadata" . | nindent 8 }}
+        ha-instance: backup
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/default-broker: {{ include (print $.Template.BasePath "/backup/broker-configmap.yaml") . | sha256sum }}
+        checksum/default-logging: {{ include (print $.Template.BasePath "/logging-configmap.yaml") . | sha256sum }}
+        checksum/default-login: {{ include (print $.Template.BasePath "/login-configmap.yaml") . | sha256sum }}
+        checksum/default-roles: {{ include (print $.Template.BasePath "/roles-configmap.yaml") . | sha256sum }}
+        {{- include "company/common/annotations" . | nindent 8 }}
+    spec:
+      {{- include "company/common/image/imagePullSecrets" . | nindent 6 }}
+      securityContext: {{ toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- include "company/common/pod/priorityClassName" . | nindent 6 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          image: {{ include "company/common/image/name" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext: {{ toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - containerPort: 61616
+              name: amqp
+            - containerPort: 61613
+              name: stomp
+            - containerPort: 8161
+              name: admin
+            - containerPort: 8162
+              name: metrics
+          {{- include "company/common/container/resources" . | nindent 10 }}
+          volumeMounts: {{ include "company/common/persistence/volumeMount" (dict "volume" .Values.backup.persistence "root" .) | nindent 12 }}
+            - name: config-files
+              mountPath: /config
+            {{- if .Values.acceptors.artemis.tls.enabled }}
+            - name: keystore-volume
+              mountPath: /opt/company-artemis/keystore
+            {{- end }}
+            {{- if .Values.auth.requireLogin }}
+            - name: login-config
+              mountPath: /opt/company-artemis/etc/login.config
+              subPath: login.config
+            - name: login-files
+              mountPath: /login
+            {{- end }}
+            {{- include "company/common/volumes/extraVolumeMounts" . | nindent 12 }}
+          {{- include "company/common/container/probes/liveness" . | indent 10 }}
+          {{- include "company/common/container/probes/startup" . | indent 10 }}
+          {{- include "company/common/container/probes/readiness" . | indent 10 }}
+          env:
+          {{- if .Values.acceptors.artemis.tls.enabled }}
+            - name: "keyStorePassword"
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.acceptors.artemis.tls.secret.name }}
+                  key: {{ .Values.acceptors.artemis.tls.secret.key.password }}
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ include "company/common/names/fullname" . }}
+      {{- if .Values.oAuthSidecar.enabled }}
+        - name: {{ .Chart.Name }}-oauth2-sidecar
+          image: {{ include "company/common/image/name" (list . .Values.oAuthSidecar.keycloak "oauth2proxy") }}
+          imagePullPolicy: {{ .Values.oAuthSidecar.keycloak.oauth2proxy.pullPolicy }}
+          securityContext: {{ toYaml .Values.oAuthSidecar.securityContext | nindent 12 }}
+          args:
+          {{- range .Values.oAuthSidecar.args }}
+            - {{ . }}
+          {{- end }}
+          volumeMounts:
+          {{- range .Values.oAuthSidecar.extraConfigmapMounts }}
+            - name: {{ tpl .name $ }}
+              mountPath: {{ .mountPath }}
+              subPath: {{ .subPath }}
+              readOnly: {{ .readOnly }}
+          {{- end }}
+          ports:
+            - containerPort: {{ .Values.oAuthSidecar.containerPort }}
+              name: oauth-proxy
+          resources:
+            {{- toYaml .Values.oAuthSidecar.resources | nindent 12 }}
+          {{- if .Values.oAuthSidecar.livenessProbe.enabled }}
+          livenessProbe:
+            {{- omit .Values.oAuthSidecar.livenessProbe "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.oAuthSidecar.readinessProbe.enabled }}
+          readinessProbe:
+            {{- omit .Values.oAuthSidecar.readinessProbe "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.oAuthSidecar.startupProbe.enabled }}
+          startupProbe:
+            {{- omit .Values.oAuthSidecar.startupProbe "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+      {{- end }}
+      {{- if .Values.acceptors.artemis.tls.enabled }}
+      initContainers:
+      - name: pem-to-keystore
+        image: {{ include "company/common/image/name" . }}
+        env:
+        - name: keyStorePassword
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Values.acceptors.artemis.tls.secret.name }}
+              key: {{ .Values.acceptors.artemis.tls.secret.key.password }}
+        - name: fileKey
+          value: /var/run/tls/artemis-tls.key
+        - name: fileCrt
+          value: /var/run/tls/artemis-tls.crt
+        - name: keyStore
+          value: /opt/company-artemis/keystore/artemis-tls.p12
+        command: ['/bin/sh']
+        args: ['-c', "openssl pkcs12 -export -out $keyStore -inkey $fileKey -in $fileCrt -password pass:$keyStorePassword"]
+        volumeMounts:
+          - name: artemis-cert
+            mountPath: /var/run/tls
+          - name: keystore-volume
+            mountPath: /opt/company-artemis/keystore
+          {{- include "company/common/volumes/extraVolumeMounts" . | nindent 12 }}
+      {{- end }}
+      volumes:
+      {{- if .Values.oAuthSidecar.enabled }}
+        {{- range .Values.oAuthSidecar.extraConfigmapMounts }}
+        - name: {{ tpl .name $ }}
+          configMap:
+            name: {{ tpl .name $ }}
+        {{- end }}
+      {{- end }}
+        {{- if .Values.acceptors.artemis.tls.enabled }}
+        - name: keystore-volume
+          emptyDir: {}
+        - name: artemis-cert
+          secret:
+            defaultMode:  0400
+            secretName: {{ .Values.acceptors.artemis.tls.secret.name }}
+            items:
+            - key: {{ .Values.acceptors.artemis.tls.secret.key.private }}
+              path: ./artemis-tls.key
+            - key: {{ .Values.acceptors.artemis.tls.secret.key.public }}
+              path: ./artemis-tls.crt
+        {{- end }}
+        {{- if .Values.auth.requireLogin }}
+        - name: login-files
+          projected:
+            defaultMode: 0400
+            sources:
+            - secret:
+                name: {{ tpl (default (printf "%s-server-secret" $fullName) .Values.auth.existingSecret) . }}
+                items:
+                - key: USERPASS
+                  path: users.properties
+            - configMap:
+                name: {{ tpl (default (printf "%s-roles-properties" $fullName) .Values.configMaps.roles) . }}
+        - name: login-config
+          configMap:
+            name: {{ tpl (default (printf "%s-login-config" $fullName) .Values.configMaps.login) . }}
+        {{- end }}
+        - name: config-files
+          projected:
+            sources:
+            - configMap:
+                name: {{ tpl (default (printf "%s-log" $fullName) .Values.configMaps.logging) . }}
+            - configMap:
+                name: {{ tpl (default (printf "%s-2-broker" $fullName) .Values.configMaps.backup.broker) . }}
+        {{- include "company/common/volumes/extraVolumes" . | nindent 8 }}
+  volumeClaimTemplates: {{ include "company/common/persistence/volumeClaimTemplate" (dict "volume" .Values.backup.persistence "root" .) | nindent 2 }}
+{{ end }}

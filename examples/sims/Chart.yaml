@@ -1,0 +1,35 @@
+apiVersion: v2
+appVersion: "1.0"
+description: simulators
+name: simulators
+version: "1.3.14"
+annotations:
+  app: true
+  package: true
+  domain: Undefined
+dependencies:
+  - name: common
+    version: 3.0.1
+    repository: "@company-public"
+  - name: helper
+    version: 0.1.0
+    repository: "file://../helper"
+  - name: global-config
+    version: 0.1.0
+    repository: "file://../global-config"
+    condition: global-config.enabled
+  - name: artemis
+    version: 6.2.8
+    repository: "@company-public"
+    condition: externalMessageSim.enabled
+    tags:
+      - simulator
+      - infrastructure
+  - name: externalMessageSim-config
+    version: 0.1.0
+    repository: "file://../externalMessageSim-config"
+    condition: externalMessageSim-config.enabled
+  - name: artemis-secrets
+    version: 0.1.0
+    repository: "file://../artemis-secrets"
+    condition: artemis-secrets.enabled

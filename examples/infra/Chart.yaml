@@ -1,0 +1,39 @@
+apiVersion: v2
+description: The infrastructure application provides core services and configuration required by other software
+name: infrastructure
+version: 1.3.34
+annotations:
+  app: true
+  package: true
+  domain: Infrastructure
+dependencies:
+  - name: common
+    version: 3.0.1
+    repository: "@company-public"
+  - name: helper
+    version: 0.1.0
+    repository: "file://../helper"
+  - name: artemis
+    version: 6.2.8
+    repository: "@company-public"
+    condition: artemis.enabled
+    tags:
+      - infrastructure
+  - name: artemis-secrets
+    version: 0.1.0
+    repository: "file://../artemis-secrets"
+    condition: artemis-secrets.enabled
+    tags:
+      - infrastructure
+  - name: postgresql-ha
+    version: 16.0.4-1
+    repository: "@company-public"
+    condition: postgresql-ha.enabled
+    tags:
+      - infrastructure
+  - name: postgresql-secrets
+    version: 0.1.0
+    repository: "file://../postgresql-secrets"
+    condition: postgresql-secrets.enabled
+    tags:
+      - infrastructure

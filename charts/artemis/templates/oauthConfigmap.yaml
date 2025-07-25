@@ -1,0 +1,9 @@
+{{- if .Values.oAuthSidecar.enabled -}}
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ include "company/artemis/oauthConfName" . }}
+data:
+  oauth2.conf: |-
+{{ tpl (.Files.Get "config/oAuth2Config.yaml") $ | indent 4  }}
+{{- end }}

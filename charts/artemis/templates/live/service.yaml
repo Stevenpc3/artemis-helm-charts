@@ -1,0 +1,34 @@
+#
+# Artemis live service
+#
+kind: Service
+apiVersion: v1
+metadata:
+  name: {{ include "company/artemis/getName" . }}
+  labels: {{ include "company/common/labels/metadata" . | nindent 4 }}
+    ha-instance: live
+spec:
+  {{- if and (or .Values.adminNodePort .Values.amqpNodePort) (not .Values.ha.enabled)}}
+  type: NodePort
+  {{- end }}
+  ports:
+    - name: amqp
+      port: 61616
+      targetPort: 61616
+      {{- if and .Values.amqpNodePort (not .Values.ha.enabled) }}
+      nodePort: {{ .Values.amqpNodePort }}
+      {{- end }}
+    - name: stomp
+      port: 61613
+      targetPort: 61613
+    - name: metrics
+      port: 8162
+      targetPort: 8162
+    - name: admin
+      port: 8161
+      targetPort: {{ ternary "oauth-proxy" "admin" .Values.oAuthSidecar.enabled }}
+      {{- if and (.Values.adminNodePort) (not .Values.ha.enabled) }}
+      nodePort: {{ .Values.adminNodePort }}
+      {{- end }}
+  selector: {{- include "company/common/labels/selector" . | nindent 4 }}
+    ha-instance: live

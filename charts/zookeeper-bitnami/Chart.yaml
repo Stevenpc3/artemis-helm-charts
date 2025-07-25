@@ -1,0 +1,19 @@
+apiVersion: v2
+
+name: zookeeper-bitnami
+
+# renovate: datasource=helm depName=zookeeper repository=https://charts.bitnami.com/bitnami
+version: 13.8.3-0
+
+description: Apache Zookeeper
+
+dependencies:
+  - name: zookeeper
+    version: 13.8.3
+    repository: oci://registry-1.docker.io/bitnamicharts/zookeeper
+
+sources:
+  - https://github.com/bitnami/charts/tree/main/bitnami/zookeeper
+  - https://artifacthub.io/packages/helm/bitnami/zookeeper
+  - https://zookeeper.apache.org/
+

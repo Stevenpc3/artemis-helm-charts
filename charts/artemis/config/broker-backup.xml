@@ -1,0 +1,301 @@
+{{- $fullName := include "company/common/names/fullname" . -}}
+<?xml version='1.0'?>
+<!--
+Licensed to the Apache Software Foundation (ASF) under one
+or more contributor license agreements.  See the NOTICE file
+distributed with this work for additional information
+regarding copyright ownership.  The ASF licenses this file
+to you under the Apache License, Version 2.0 (the
+"License"); you may not use this file except in compliance
+with the License.  You may obtain a copy of the License at
+
+  http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing,
+software distributed under the License is distributed on an
+"AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+KIND, either express or implied.  See the License for the
+specific language governing permissions and limitations
+under the License.
+-->
+
+<!--
+Need to ensure each broker is the same in ways that they share
+it might make more sense to make broker file modular and then there can
+be a core.xml and ha.xml and address.xml etc.
+https://activemq.apache.org/components/artemis/documentation/latest/configuration-index.html#:~:text=Modularising%20broker.xml
+-->
+
+<configuration xmlns="urn:activemq"
+   xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:activemq /schema/artemis-configuration.xsd">
+
+   <core xmlns="urn:activemq:core"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:activemq:core ">
+      <name>{{ .Release.Name }}-2</name>
+      <persistence-enabled>true</persistence-enabled>
+      <paging-directory>./data/paging</paging-directory>
+      <bindings-directory>./data/bindings</bindings-directory>
+      <journal-directory>./data/journal</journal-directory>
+      <large-messages-directory>./data/large-messages</large-messages-directory>
+      <journal-datasync>false</journal-datasync>
+      <journal-min-files>{{ .Values.settings.journalMinFiles | int64 }}</journal-min-files>
+      <journal-pool-files>{{ .Values.settings.journalPoolFiles | int64 }}</journal-pool-files>
+      <global-max-size>{{ .Values.settings.globalMaxSize | int64 }}</global-max-size>
+      <!--
+       This value was determined through a calculation.
+       run perf-journal
+      -->
+      <journal-buffer-timeout>{{ .Values.settings.journalBufferTimeout | int64 }}</journal-buffer-timeout>
+      <journal-buffer-size>{{ .Values.settings.journalBufferSize | int64 }}</journal-buffer-size>
+
+      <!-- how often we are looking for how many bytes are being used on the disk in ms -->
+      <disk-scan-period>{{ .Values.settings.diskScanPeriod | int64 }}</disk-scan-period>
+      <!-- once the disk hits this limit the system will block, or close the connection in certain protocols
+           that won't support flow control. -->
+      <max-disk-usage>{{ .Values.settings.maxDiskUsage | int64 }}</max-disk-usage>
+      <!-- should the broker detect dead locks and other issues -->
+      <critical-analyzer>{{ .Values.settings.criticalAnalyzer }}</critical-analyzer>
+      <critical-analyzer-timeout>{{ .Values.settings.criticalAnalyzerTimeout | int64 }}</critical-analyzer-timeout>
+      <critical-analyzer-check-period>{{ .Values.settings.criticalAnalyzerCheckPeriod | int64 }}</critical-analyzer-check-period>
+      <critical-analyzer-policy>{{ .Values.settings.criticalAnalyzerPolicy }}</critical-analyzer-policy>
+
+      <!-- Enable Security -->
+      <security-enabled>{{ .Values.settings.securityEnabled }}</security-enabled>
+
+      <!-- Tracking the Validated User; will assist in security auditing -->
+      <populate-validated-user>{{ .Values.settings.populateValidatedUser }}</populate-validated-user>
+
+      <!-- Addresses authentication caching STIG -->
+      <!-- sets how long cache entries are valid -->
+      <authentication-cache-size>{{ .Values.settings.authenticationCacheSize | int64 }}</authentication-cache-size>
+      <authorization-cache-size>{{ .Values.settings.authorizationCacheSize | int64 }}</authorization-cache-size>
+      <security-invalidation-interval>{{ .Values.settings.securityInvalidationInterval | int64 }}</security-invalidation-interval>
+
+      <!-- Addresses session termination STIG -->
+      <!-- Disallows clients to specify their own TTL -->
+      <connection-ttl-override>{{ .Values.settings.connectionTTLOverride | int64 }}</connection-ttl-override>
+
+      <!-- Addresses session termination STIG -->
+      <!-- Check connections for TTL violations periodically on the broker -->
+      <connection-ttl-check-interval>{{ .Values.settings.connectionTTLCheckInterval | int64 }}</connection-ttl-check-interval>
+
+      {{ if .Values.ha.enabled }}
+      <!-- HA settings -->
+      <ha-policy>
+         <replication>
+            <backup>
+               <allow-failback>{{ .Values.ha.backup.allowFailBack }}</allow-failback>
+               <max-saved-replicated-journals-size>{{ .Values.ha.backup.maxSavedReplicatedJournalsSize | int64 }}</max-saved-replicated-journals-size>
+               {{ if index .Values "zookeeper-bitnami" "enabled" }}
+               <!-- In HA mode, use Zookeeper to protect against Artemis split-brain issues -->
+               <manager>
+                  <class-name>org.apache.activemq.artemis.lockmanager.zookeeper.CuratorDistributedLockManager</class-name>
+                  <properties>
+                     <property key="connect-string" value="{{ include "helpers.zookeeperService" . }}"/>
+                     <property key="namespace" value="artemis-lock"/>
+                  </properties>
+               </manager>
+               {{ end }}
+            </backup>
+         </replication>
+      </ha-policy>
+
+      <!-- Connectors -->
+      <connectors>
+         <connector name="artemis1">{{ printf "tcp://%s-1:61616" $fullName }}</connector>
+         <!-- self -->
+         <connector name="artemis2">{{ printf "tcp://%s-2:61616" $fullName }}</connector>
+      </connectors>
+
+      <cluster-user>exampleUser</cluster-user>
+      <cluster-password>secret</cluster-password>
+      <cluster-connections>
+         <cluster-connection name="artemis-cluster">
+         <connector-ref>artemis2</connector-ref>
+         <check-period>2000</check-period>
+         <use-duplicate-detection>true</use-duplicate-detection>
+         <static-connectors>
+            <connector-ref>artemis1</connector-ref>
+         </static-connectors>
+         </cluster-connection>
+      </cluster-connections>
+      {{ end }}
+
+      <!-- Metrics exporter settings -->
+      {{ if .Values.metrics.enabled -}}
+      <metrics>
+         <jvm-gc>{{ .Values.metrics.jvm.gc.enabled }}</jvm-gc>
+         <jvm-memory>{{ .Values.metrics.jvm.memory.enabled }}</jvm-memory>
+         <jvm-threads>{{ .Values.metrics.jvm.threads.enabled }}</jvm-threads>
+         <netty-pool>{{ .Values.metrics.nettyPool.enabled }}</netty-pool>
+         <file-descriptors>{{ .Values.metrics.fileDescriptors.enabled }}</file-descriptors>
+         <processor>{{ .Values.metrics.processor.enabled }}</processor>
+         <uptime>{{ .Values.metrics.uptime.enabled }}</uptime>
+         <logging>{{ .Values.metrics.logging.enabled }}</logging>
+         <security-caches>{{ .Values.metrics.securityCaches.enabled }}</security-caches>
+         {{ if .Values.metrics.serviceMonitor.enabled -}}
+         <plugin class-name="com.redhat.amq.broker.core.server.metrics.plugins.ArtemisPrometheusMetricsPlugin"/>
+         {{- end }}
+      </metrics>
+      {{- end }}
+
+      <broker-plugins>
+        <broker-plugin class-name="org.apache.activemq.artemis.core.server.plugin.impl.LoggingActiveMQServerPlugin">
+            {{ if ne .Values.logging.audit.level "OFF" -}}
+            <property key="LOG_ALL_EVENTS" value={{ .Values.logging.events.all | quote }}/>
+            <!-- should log info when a connection is created or destroyed -->
+            <property key="LOG_CONNECTION_EVENTS" value={{ .Values.logging.events.connection | quote }}/>
+            <!-- should log info when a session is created or destroyed -->
+            <property key="LOG_SESSION_EVENTS" value={{ .Values.logging.events.session | quote }}/>
+            <property key="LOG_CONSUMER_EVENTS" value={{ .Values.logging.events.consumer | quote }}/>
+            <property key="LOG_DELIVERING_EVENTS" value={{ .Values.logging.events.delivering | quote }}/>
+            <property key="LOG_SENDING_EVENTS" value={{ .Values.logging.events.sending | quote }}/>
+            <property key="LOG_INTERNAL_EVENTS" value={{ .Values.logging.events.internal | quote }}/>
+            {{- end -}}
+         </broker-plugin>
+      </broker-plugins>
+
+      <!-- Limits number of session STIG -->
+      <resource-limit-settings>
+        <resource-limit-setting match={{ .Values.resourceLimitSettings.match }}>
+            <max-connections>{{ .Values.resourceLimitSettings.maxConnections | int64 }}</max-connections>
+            <max-queues>{{ .Values.resourceLimitSettings.maxQueues | int64 }}</max-queues>
+        </resource-limit-setting>
+        {{ if .Values.extraResourceLimitSettings -}}
+            {{ .Values.extraResourceLimitSettings }}
+        {{ end }}
+      </resource-limit-settings>
+
+      <acceptors>
+         <!-- useEpoll means: it will use Netty epoll if you are on a system (Linux) that supports it -->
+         <!-- amqpCredits: The number of credits sent to AMQP producers -->
+         <!-- amqpLowCredits: The server will send the # credits specified at amqpCredits at this low mark -->
+         <!-- Acceptor for every supported protocol -->
+         <acceptor name="artemis">
+              tcp://0.0.0.0:61616?
+              {{- if .Values.acceptors.artemis.tls.enabled }}
+              sslEnabled=true;
+              keyStorePath=/opt/company-artemis/keystore/artemis-tls.p12;
+              keyStorePassword=${keyStorePassword};
+              keyStoreType=PKCS12;
+              {{- if .Values.acceptors.artemis.tls.enabledCipherSuites }}
+              enabledCipherSuites={{- .Values.acceptors.artemis.tls.enabledCipherSuites -}};
+              {{- end }}
+              {{- if .Values.acceptors.artemis.tls.enabledProtocols }}
+              enabledProtocols={{- .Values.acceptors.artemis.tls.enabledProtocols -}};
+              {{- end }}
+              {{- end }}
+              protocols=AMQP,CORE,OPENWIRE;
+              useEpoll=true;
+              amqpCredits=1000;
+              amqpLowCredits=300;
+              anycastPrefix={{ .Values.acceptors.artemis.anycastPrefix -}};
+              multicastPrefix={{ .Values.acceptors.artemis.multicastPrefix -}};
+          </acceptor>
+
+          <acceptor name="stomp-acceptor">
+              tcp://0.0.0.0:61613?
+              {{- if .Values.acceptors.artemis.tls.enabled }}
+              sslEnabled=true;
+              keyStorePath=/opt/company-artemis/keystore/artemis-tls.p12;
+              keyStorePassword=${keyStorePassword};
+              keyStoreType=PKCS12;
+              {{- if .Values.acceptors.artemis.tls.enabledCipherSuites }}
+              enabledCipherSuites={{- .Values.acceptors.artemis.tls.enabledCipherSuites -}};
+              {{- end }}
+              {{- if .Values.acceptors.artemis.tls.enabledProtocols }}
+              enabledProtocols={{- .Values.acceptors.artemis.tls.enabledProtocols -}};
+              {{- end }}
+              {{- end }}
+              protocols=STOMP;
+              anycastPrefix={{ .Values.acceptors.stomp.anycastPrefix -}};
+              multicastPrefix={{ .Values.acceptors.stomp.multicastPrefix -}};
+          </acceptor>
+
+      </acceptors>
+
+      <security-settings>
+         <security-setting match="#">
+            <permission type="createNonDurableQueue" roles={{ .Values.auth.roles.createNonDurableQueue | quote }}/>
+            <permission type="deleteNonDurableQueue" roles={{ .Values.auth.roles.deleteNonDurableQueue | quote }}/>
+            <permission type="createDurableQueue" roles={{ .Values.auth.roles.createDurableQueue | quote }}/>
+            <permission type="deleteDurableQueue" roles={{ .Values.auth.roles.deleteDurableQueue | quote }}/>
+            <permission type="createAddress" roles={{ .Values.auth.roles.createAddress | quote }}/>
+            <permission type="deleteAddress" roles={{ .Values.auth.roles.deleteAddress | quote }}/>
+            <permission type="consume" roles={{ .Values.auth.roles.consume | quote }}/>
+            <permission type="browse" roles={{ .Values.auth.roles.browse | quote }}/>
+            <permission type="send" roles={{ .Values.auth.roles.send | quote }}/>
+            <!-- we need this otherwise ./artemis data imp wouldn't work -->
+            <permission type="manage" roles={{ .Values.auth.roles.manage | quote }}/>
+         </security-setting>
+      </security-settings>
+      <address-settings>
+         <!-- if you define auto-create on certain queues, management has to be auto-create -->
+         <address-setting match="activemq.management#">
+            <message-counter-history-day-limit>{{ .Values.addressSettings.messageCounterHistoryDayLimit }}</message-counter-history-day-limit>
+         </address-setting>
+
+         <!-- queue matcher for queues that want to be durable
+                - if a queue doesn't have an active consumer, there will be no queue defined in artemis
+                - if a producer sends a message to the queue with no consumers, a queue will be automatically created with that message
+                    iff the message is marked as durable
+                        - if the message is not marked as durable, the message will not be able to be consumed by any potential consumer
+                - if a consumer detaches from a queue, and the queue has 0 messages on it, artemis will remove it from the list
+                    until a consumer attaches to the queue, or a produces sends a durable message to the queue.
+                - This is all default behavior / settings for queues. No overrides are needed in the address settings.
+         -->
+         <address-setting match="queue.#">
+            <expiry-address>{{ .Values.addressSettings.expiryAddress.name }}</expiry-address>
+            <dead-letter-address>{{ .Values.addressSettings.deadLetterQueue.name }}</dead-letter-address>
+            <default-address-routing-type>ANYCAST</default-address-routing-type>
+         </address-setting>
+
+         <!--default for catch all-->
+         <address-setting match="topic.#">
+            <expiry-address>{{ .Values.addressSettings.expiryAddress.name }}</expiry-address>
+            <dead-letter-address>{{ .Values.addressSettings.deadLetterQueue.name }}</dead-letter-address>
+            <max-delivery-attempts>3</max-delivery-attempts>
+            <message-counter-history-day-limit>{{ .Values.addressSettings.messageCounterHistoryDayLimit }}</message-counter-history-day-limit>
+            <default-address-routing-type>MULTICAST</default-address-routing-type>
+         </address-setting>
+         <address-setting match={{ .Values.addressSettings.expiryAddress.name | quote }}>
+            <max-size-bytes>{{ .Values.addressSettings.expiryAddress.maxSizeBytes | int64 }}</max-size-bytes>
+            <address-full-policy>{{ .Values.addressSettings.expiryAddress.addressFullPolicy }}</address-full-policy>
+         </address-setting>
+         <address-setting match={{ .Values.addressSettings.deadLetterQueue.name | quote }}>
+            <max-size-bytes>{{ .Values.addressSettings.deadLetterQueue.maxSizeBytes | int64 }}</max-size-bytes>
+            <address-full-policy>{{ .Values.addressSettings.deadLetterQueue.addressFullPolicy }}</address-full-policy>
+            <expiry-delay>{{ .Values.addressSettings.deadLetterQueue.expiryDelay | int64 }}</expiry-delay>
+            <expiry-address>{{ .Values.addressSettings.expiryAddress.name }}</expiry-address>
+         </address-setting>
+         <address-setting match="#">
+            <expiry-address>{{ .Values.addressSettings.expiryAddress.name }}</expiry-address>
+            <dead-letter-address>{{ .Values.addressSettings.deadLetterQueue.name }}</dead-letter-address>
+            <max-delivery-attempts>3</max-delivery-attempts>
+            <message-counter-history-day-limit>{{ .Values.addressSettings.messageCounterHistoryDayLimit }}</message-counter-history-day-limit>
+            {{- if .Values.addressSettings.pageLimits.enabled }}
+            <page-limit-bytes>{{ .Values.addressSettings.pageLimits.pageLimitBytes }}</page-limit-bytes>
+            <page-full-policy>{{ .Values.addressSettings.pageLimits.pageFullPolicy }}</page-full-policy>
+            {{- end }}
+         </address-setting>
+         {{- if .Values.extraAddressSettings -}}
+            {{ .Values.extraAddressSettings | nindent 9 }}
+         {{- end }}
+      </address-settings>
+      <addresses>
+         <address name={{ .Values.addressSettings.expiryAddress.name | quote }}>
+            <anycast>
+               <queue name={{ .Values.addressSettings.expiryAddress.name | quote }} purge-on-no-consumers={{ .Values.addressSettings.expiryAddress.purgeOnNoConsumers | quote }}/>
+            </anycast>
+         </address>
+         <address name={{ .Values.addressSettings.deadLetterQueue.name | quote }}>
+            <anycast>
+               <queue name={{ .Values.addressSettings.deadLetterQueue.name | quote }} purge-on-no-consumers={{ .Values.addressSettings.deadLetterQueue.purgeOnNoConsumers | quote }}/>
+            </anycast>
+         </address>
+         {{- if .Values.extraAddresses -}}
+            {{ .Values.extraAddresses | nindent 9 }}
+         {{- end }}
+      </addresses>
+   </core>
+</configuration>

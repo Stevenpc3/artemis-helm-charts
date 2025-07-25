@@ -1,0 +1,12 @@
+#
+# artemis environment variables
+#
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: {{ include "company/common/names/fullname" . }}
+  labels: {{ include "company/common/labels/metadata" . | nindent 4 }}
+data:
+  MEM_ARG: {{ include "company/artemis/memory" . }}
+  JAVA_ARGS_APPEND: {{ .Values.jvm.args }}
+  BASEPATH: {{ .Values.basePath }}

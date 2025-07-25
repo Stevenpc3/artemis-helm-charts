@@ -1,0 +1,85 @@
+artemis-secrets:
+  nameOverride: simulators-artemis-secrets
+
+# An externalMessageSim
+artemis:
+  enabled: true
+  auth:
+    enabled: false
+  zookeeper-bitnami:
+    zookeeper:
+      resources:
+        requests:
+          memory: 256M
+          cpu: .25
+        limits:
+          memory: 1G
+      volumePermissions:
+        resources:
+          requests:
+            memory: 256M
+            cpu: .25
+          limits:
+            memory: 512M
+  settings:
+    connectionTTLOverride: 90000
+    maxDiskUsage: 95
+  jvm:
+    memory: "5g"
+  live:
+    persistence:
+      size: 6G
+  backup:
+    persistence:
+      size: 6G
+  resources:
+    requests:
+      cpu: 1
+    limits:
+      memory: 6G
+  metrics:
+    enabled: true
+    serviceMonitor:
+      # -- serviceMonitor must be true to gather any metrics below in Prometheus. Set to false for logging when metrics.enabled=true
+      enabled: true
+    fileDescriptors:
+      enabled: true
+    processor:
+      enabled: true
+    uptime:
+      enabled: true
+    logging:
+      enabled: true
+    jvm:
+      gc:
+        # -- JVM garbage collector metrics
+        enabled: true
+      threads:
+        # -- JVM thread usage metrics
+        enabled: true
+      memory:
+        # -- JMV memory usage metrics
+        enabled: true
+  ingress:
+    enabled: true
+  oAuthSidecar:
+    enabled: true
+    oauthSecretName: '{{ include "helper.oauthSecret" . }}'
+  basePath: /simulators/artemis
+  # -- Overrides typical artemis resources to be named externalMessageSim
+  nameOverride: externalMessageSim
+  # -- Addresses to be added to the broker.xml addresses section
+  extraAddresses: |
+       <address name="hello">
+            <multicast/>
+        </address>
+        <address name="goodbye">
+            <multicast/>
+        </address>
+        <address name="topic.external.A">
+            <multicast/>
+        </address>
+        <address name="topic.external.B">
+            <multicast/>
+        </address>
+

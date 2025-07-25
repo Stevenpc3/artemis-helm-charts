@@ -1,0 +1,102 @@
+global:
+  postgresql:
+    # postgresql needs to set existingSecret or it will generate it's own and not mount the secret
+    existingSecret: '{{ printf "%s-%s" (default .Release.Name .Values.global.infrastructureRelease) "postgresql-secrets-auth" }}'
+    existingSecretKey: password
+
+# Artemis resource limits determined from JET 22-04
+artemis:
+  enabled: true
+  auth:
+    existingSecret: '{{-  include "helper.createFullNameForRelease" (dict "releaseName" .Release.Name  "name" "artemis-secrets-server") -}}'
+  ha:
+    enabled: true
+  zookeeper-bitnami:
+    enabled: true
+    zookeeper:
+      resources:
+        requests:
+          memory: 256M
+          cpu: .25
+        limits:
+          memory: 1G
+      volumePermissions:
+        resources:
+          requests:
+            memory: 256M
+            cpu: .25
+          limits:
+            memory: 512M
+  addressSettings:
+    # -- enables page limits that defaults to 1G for pageLimitBytes with a fail for pageFullPolicy on any address to prevent pvc from filling during paging
+    pageLimits:
+      enabled: true
+  settings:
+    connectionTTLOverride: 90000
+    maxDiskUsage: 95
+  labels:
+    type: infrastructure
+  resources:
+    requests:
+      cpu: 2
+    limits:
+      memory: 6G
+  jvm:
+    memory: "5000m"
+  live:
+    persistence:
+      size: 6G
+  backup:
+    persistence:
+      size: 6G
+  metrics:
+    enabled: true
+    serviceMonitor:
+      # -- serviceMonitor must be true to gather any metrics below in Prometheus. Set to false for logging when metrics.enabled=true
+      enabled: true
+    fileDescriptors:
+      enabled: true
+    processor:
+      enabled: true
+    uptime:
+      enabled: true
+    logging:
+      enabled: true
+    jvm:
+      gc:
+        # -- JVM garbage collector metrics
+        enabled: true
+      threads:
+        # -- JVM thread usage metrics
+        enabled: true
+      memory:
+        # -- JMV memory usage metrics
+        enabled: true
+  ingress:
+    enabled: true
+  oAuthSidecar:
+    enabled: true
+    oauthSecretName: '{{ include "helper.oauthSecret" . }}'
+  basePath: /artemis
+
+artemis-secrets:
+  serverSecret:
+    enabled: true
+
+postgresql-ha:
+  enabled: true
+  postgresql-ha:
+    metrics:
+      enabled: true
+      serviceMonitor:
+        enabled: true
+    persistence:
+      size: 50G
+    pgpool:
+      numInitChildren: 290
+      resources:
+        limits:
+          memory: 5G
+      replicaCount: 1
+    postgresql:
+      maxConnections: 300

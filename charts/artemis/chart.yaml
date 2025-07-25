@@ -1,0 +1,15 @@
+apiVersion: v2
+description: Apache ActiveMQ Artemis message broker
+name: artemis
+# renovate: bump
+version: 7.1.0
+# renovate: datasource=docker depName=apache/activemq-artemis
+appVersion: 2.42.0
+dependencies:
+  - name: common
+    version: ">= 0.0.0-0"
+    repository: "file://../common"
+  - name: zookeeper-bitnami
+    version: 13.8.3-0
+    repository: https://nexus.company/repository/helm-releases
+    condition: zookeeper-bitnami.enabled

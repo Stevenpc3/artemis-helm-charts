@@ -1,0 +1,2 @@
+# renovate: datasource=docker depName=apache/activemq-artemis
+2.42.0-0

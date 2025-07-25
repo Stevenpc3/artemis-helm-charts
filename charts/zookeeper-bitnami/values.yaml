@@ -1,0 +1,18 @@
+global:
+  imageRegistry: ""
+  storageClass: ""
+  security:
+    allowInsecureImages: true
+
+zookeeper:
+  resourcesPreset: none
+  image:
+    registry: cdn.harbor.company.com
+    repository: ext.hub.docker.com/bitnami/zookeeper
+  volumePermissions:
+    resourcesPreset: none
+    image:
+      registry: cdn.harbor.company.com
+      repository: ext.hub.docker.com/zookeeper/os-shell
+  tls:
+    resourcesPreset: none
